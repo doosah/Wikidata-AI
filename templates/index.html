@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wikidata AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Переключатель языков -->
+    <div style="position:fixed;top:10px;right:10px;">
+        <select id="langSel">
+            {% for code, name in languages.items() %}
+              <option value="{{ code }}" {% if code==lang %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>🧠 Wikidata AI</h1>
+            <p class="subtitle">Спроси обо всём — от Микеланджело до VK. Ответы из открытой базы знаний.</p>
+        </header>
+
+        <div class="chat-container">
+            <div class="messages-area" id="messagesArea">
+                <div class="message bot-message">
+                    Привет! Я — ваш умный помощник на базе Wikidata.<br>
+                    Задайте вопрос: <em>«Кто такой Микеланджело?»</em> или <em>«Что такое ВКонтакте?»</em>
+                </div>
+            </div>
+            <div class="input-area">
+                <input type="text" class="message-input" id="messageInput" placeholder="Например: Караваджо, Microsoft, Эйфелева башня...">
+                <button class="send-button" id="sendButton">➤</button>
+            </div>
+        </div>
+
+        <div class="examples">
+            <div class="example-item" onclick="useExample('Кто такой Микеланджело?')">Кто такой Микеланджело?</div>
+            <div class="example-item" onclick="useExample('Что такое ВКонтакте?')">Что такое ВКонтакте?</div>
+            <div class="example-item" onclick="useExample('Кто такая Мария Кюри?')">Кто такая Мария Кюри?</div>
+            <div class="example-item" onclick="useExample('Microsoft')">Microsoft</div>
+        </div>
+    </div>
+
+    <script>
+        const langSel      = document.getElementById("langSel");
+        const messagesArea = document.getElementById("messagesArea");
+        const messageInput = document.getElementById("messageInput");
+        const sendButton   = document.getElementById("sendButton");
+
+        langSel.onchange = () => fetch(`/set_lang/${langSel.value}`).then(() => location.reload());
+
+        let lastQuestion = "";
+
+        function addMessage(text, isUser=false, showMore=false){
+            const div = document.createElement("div");
+            div.className = `message ${isUser?'user-message':'bot-message'}`;
+            const time = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+            // превращаем Markdown-ссылки в HTML <a target="_blank">
+            const html = text
+                .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+                .replace(/\[🔗 Источник\]\((https?:\/\/[^)]+)\)/g,
+                         '<a href="$1" target="_blank" rel="noopener">🔗 Источник</a>');
+            div.innerHTML = `${html}<div class="message-time">${time}</div>`;
+            messagesArea.appendChild(div);
+            if(showMore){
+                const moreBtn = document.createElement("button");
+                moreBtn.textContent = "Показать ещё";
+                moreBtn.onclick = () => loadMore();
+                messagesArea.appendChild(moreBtn);
+            }
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+
+        function useExample(text){
+            messageInput.value = text;
+            messageInput.focus();
+        }
+
+        async function sendMessage(){
+            const msg = messageInput.value.trim();
+            if(!msg) return;
+            addMessage(msg, true);
+            messageInput.value = '';
+            sendButton.disabled = true;
+            lastQuestion = msg;
+            addMessage("<div class=thinking>Думаю…</div>");
+            try{
+                const r = await fetch("/ask",{method:"POST",
+                                              headers:{"Content-Type":"application/json"},
+                                              body:JSON.stringify({question:msg})});
+                const j = await r.json();
+                messagesArea.removeChild(messagesArea.lastChild);
+                addMessage(j.answer, false, j.more);
+            }catch(e){
+                messagesArea.removeChild(messagesArea.lastChild);
+                addMessage("Ошибка связи с сервером.");
+            }
+            sendButton.disabled = false;
+        }
+
+        async function loadMore(){
+            const btn = document.querySelector("button");   // кнопка «Показать ещё»
+            if(btn) btn.disabled = true;
+            addMessage("<div class=thinking>Думаю…</div>");
+            try{
+                const r = await fetch("/more",{method:"POST",
+                                               headers:{"Content-Type":"application/json"},
+                                               body:JSON.stringify({question:lastQuestion})});
+                const j = await r.json();
+                messagesArea.removeChild(messagesArea.lastChild);
+                addMessage(j.answer);
+            }catch(e){
+                messagesArea.removeChild(messagesArea.lastChild);
+                addMessage("Ошибка связи с сервером.");
+            }
+        }
+
+        sendButton.onclick = sendMessage;
+        messageInput.onkeypress = e => {if(e.key==="Enter") sendMessage();};
+    </script>
+</body>
+</html>
