@@ -1,4 +1,4 @@
 Flask==2.3.3
 requests
 spacy
-pytz
+gunicorn==21.2.0
